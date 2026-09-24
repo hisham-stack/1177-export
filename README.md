@@ -1,6 +1,17 @@
 # journal-export-1177
 
-A Playwright-based scraper that exports personal medical journal entries (*Anteckningar*) from [journalen.1177.se](https://journalen.1177.se) into structured Markdown and JSON files. Authentication is performed manually via BankID in the browser window that the script opens.
+A Playwright scraper that exports your own 1177 health data — journal records (_Anteckningar_) and inbox conversations (_Inkorg_) — into structured Markdown and JSON. Authentication is manual: you complete BankID in the browser window the script opens.
+
+## What it exports
+
+| Section        | Source                           | Unit of data                                      |
+| -------------- | -------------------------------- | ------------------------------------------------- |
+| `anteckningar` | `journalen.1177.se`              | one journal record per entry                      |
+| `inkorg`       | `e-tjanster.1177.se/messageList` | a conversation (_ärende_) of one or more messages |
+
+The two live on different 1177 sites with **independent sessions**, so exporting both normally means two BankID prompts.
+
+> 1177 keeps inbox messages for **two years** only. A short Inkorg export reflects that retention limit, not a failure to find older messages.
 
 ## Prerequisites
 
@@ -10,69 +21,85 @@ A Playwright-based scraper that exports personal medical journal entries (*Antec
 ## Installation
 
 ```bash
-# Clone and enter the project
 git clone <repo-url>
 cd journal-export-1177
 
-# Create and activate a virtual environment
 python3 -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 
-# Install Python dependencies
 pip install -r requirements.txt
-
-# Install the Chromium browser used by Playwright
 playwright install chromium
+```
+
+On Ubuntu 26.04 the last step fails with `ERROR: Playwright does not support chromium on ubuntu26.04-x64`, because the release is newer than Playwright's support list. Override the platform check:
+
+```bash
+PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 playwright install chromium
 ```
 
 ## Running
 
 ```bash
-# Activate the virtual environment (if not already active)
 source venv/bin/activate
 
-# Run the scraper
-python scraper.py
+python scraper.py                        # every section
+python scraper.py --only inkorg          # just one
+python scraper.py --only inkorg --clean  # ...after deleting its previous export
 ```
 
-A Chromium browser window will open and navigate to `journalen.1177.se`. **You have 2 minutes to complete BankID authentication.** Once logged in, the script will automatically:
+A Chromium window opens on 1177. **You have 2 minutes to complete BankID.** The script then works through each selected section on its own, so one section failing does not waste the login the other still needs. Progress goes to the terminal and to `scraper.log`.
 
-1. Navigate to *Journalen → Anteckningar*
-2. Load all records (clicking "Visa alla" if present)
-3. Expand each record to retrieve its full content
-4. Save the results to the `output/` directory
-
-Progress is printed to the terminal and written to `scraper.log`.
+`--clean` deletes the selected sections' previous exports first, so the output reflects exactly one run. It is opt-in rather than automatic: a run that fails halfway would otherwise wipe a good earlier export and replace it with a partial one.
 
 ## Output
 
-```
+```text
 output/
-├── md/
-│   └── YYYY-MM-DD.md         # One file per date; all records for that day
-└── json/
-    └── journal_YYYY-MM-DD.json   # All records combined, exported today
+├── anteckningar/
+│   ├── md/YYYY-MM-DD.md                 # one file per date
+│   └── json/anteckningar_YYYY-MM-DD.json
+└── inkorg/
+    ├── md/YYYY-MM-DD.md                 # one file per date, threads with nested messages
+    └── json/inkorg_YYYY-MM-DD.json
 ```
 
-Each Markdown file groups records by date and includes the record type, author, and care provider. The JSON file contains the same data as an array of objects, suitable for further processing.
+Markdown files group entries by date with their type, author and care provider; the JSON holds the same data as an array for further processing. Anything with no detectable date lands in `utan-datum.md`.
 
-> **Note:** Output files contain sensitive personal medical data. The `output/` directory is git-ignored and should never be committed or shared.
+> **Note:** output files contain sensitive personal medical data. The `output/` directory is git-ignored and should never be committed or shared.
 
 ## How it works
 
-| Step | Function | Description |
-|------|----------|-------------|
-| 1 | `do_login()` | Opens journalen.1177.se and waits up to 2 min for BankID redirect |
-| 2 | `navigate_to_anteckningar()` | Clicks *Journalen* → *Anteckningar* in the nav bar |
-| 3 | `load_all_records()` | Clicks "Visa alla", then polls the DOM until all `<li>` elements match the total reported by the page |
-| 4 | `extract_all_records()` | Clicks each record's expander button, waits for the AJAX content to load, and converts the HTML to Markdown |
-| 5 | `save_results()` | Groups records by date and writes the Markdown and JSON output files |
+```text
+scraper.py        # CLI: picks sections, owns the browser, saves results
+common.py         # config, logging, login, harvest verification, output helpers
+anteckningar.py   # journalen.1177.se
+inkorg.py         # e-tjanster.1177.se
+```
+
+Each section is its own module exposing `scrape(page)` and `save(items)`; `scraper.py` dispatches through a `SECTIONS` dict, so adding a section means adding a module and one entry. They target different sites with unrelated markup, which is why they are separate — but they share one login, browser and output layer so the two cannot drift apart.
+
+| Step | Function                                | Description                                                |
+| ---- | --------------------------------------- | ---------------------------------------------------------- |
+| 1    | `manual_login()`                        | Opens the site and waits up to 2 min for BankID            |
+| 2    | `navigate()` / `select_tab()`           | Reaches the section, by link or tab                        |
+| 3    | `load_all()` / `page_count()`           | Expands or pages through the full list                     |
+| 4    | `extract_record()` / `extract_detail()` | Opens each entry, waits for its content, converts the HTML |
+| 5    | `verify_harvest()`                      | Checks the haul against the count the page itself reports  |
+| 6    | `save()`                                | Groups by date and writes the Markdown and JSON files      |
+
+## Guarding against silent partial exports
+
+A scraper that quietly returns half the data is worse than one that crashes, so the failure modes that produce plausible-looking output are made loud:
+
+- **Counts are verified.** Each section compares what it collected against the total the page reports, and says so either way.
+- **Empty content is an error.** A thread that yields no text is reported by name and URL — a count-based check cannot see this, because the item was collected, just hollow.
+- **An empty tab and an unreachable tab are distinguished** by the site's own "you have no messages" line, so missing data never reads as an empty inbox.
+- **Nothing is parsed destructively.** Each conversation's whole detail page is stored as Markdown _before_ being split into messages, so a missed card costs structure, never content.
+- **An incomplete run still saves.** It reports the gap and exits non-zero, but keeps what it collected.
 
 ## Dependency management
 
 Direct dependencies are listed in `requirements.in`. `requirements.txt` is the full pinned lockfile (including transitive dependencies) generated by `pip-tools`.
-
-To update or regenerate the lockfile after changing `requirements.in`:
 
 ```bash
 pip install pip-tools

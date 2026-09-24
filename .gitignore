@@ -1,7 +1,37 @@
+# Exported medical data, and the debug page dumps written alongside it
 output/
+
+# Logs — scraper.log records subjects, dates and care providers
+*.log
+
+# Playwright session state: a valid BankID session, reusable by anyone who has it
+cookies.json
+storage_state.json
+.auth/
+
+# Playwright capture artifacts. A HAR or trace holds complete page payloads,
+# which for this scraper means full medical records.
+*.har
+trace.zip
+traces/
+test-results/
+playwright-report/
+
+# Stray page dumps saved outside output/ while debugging
+*_debug*.html
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Python
 venv/
 __pycache__/
 *.pyc
 *.pyo
-*.log
-cookies.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db

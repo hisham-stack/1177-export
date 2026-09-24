@@ -1,0 +1,4 @@
+# Direct dependencies only. requirements.txt is the compiled lockfile:
+#   pip-compile requirements.in
+markdownify==1.2.2
+playwright==1.59.0
