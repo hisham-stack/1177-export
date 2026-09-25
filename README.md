@@ -1,6 +1,6 @@
-# journal-export-1177
+# 1177-export
 
-A Playwright scraper that exports your own 1177 health data — journal records (_Anteckningar_) and inbox conversations (_Inkorg_) — into structured Markdown and JSON. Authentication is manual: you complete BankID in the browser window the script opens.
+Export your own Swedish 1177.se health data — journal records (_Anteckningar_) and inbox conversations (_Inkorg_) — to Markdown and JSON. A Playwright scraper; authentication is manual, completed with BankID in the browser window the script opens.
 
 ## What it exports
 
@@ -22,7 +22,7 @@ The two live on different 1177 sites with **independent sessions**, so exporting
 
 ```bash
 git clone <repo-url>
-cd journal-export-1177
+cd 1177-export
 
 python3 -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate

@@ -30,7 +30,7 @@ LOGIN_TIMEOUT   = 120_000   # 2 min for manual BankID
 NAV_TIMEOUT     = 30_000
 CONTENT_TIMEOUT = 15_000
 
-log = logging.getLogger("journal-export")
+log = logging.getLogger("1177-export")
 
 
 def setup_logging() -> None:
